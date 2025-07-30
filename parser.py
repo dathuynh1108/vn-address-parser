@@ -122,7 +122,7 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
     result = process.extractOne(
         part_normalized_vietnamese,
         list(SPECIAL_PROVINCE_MAP.keys()),
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
@@ -139,7 +139,7 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
     result = process.extractOne(
         part_normalized_string,
         list(PROVINCE_LOOKUP),
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
 
@@ -151,7 +151,7 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
     result = process.extractOne(
         part_normalized_vietnamese,
         list(PROVINCE_LOOKUP),
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
@@ -168,7 +168,7 @@ def fuzzy_search_ward(part, fuzzy_threshold=80):
     result = process.extractOne(
         part_normalized_string,
         list(NEW_WARDS),
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
@@ -179,7 +179,7 @@ def fuzzy_search_ward(part, fuzzy_threshold=80):
     result = process.extractOne(
         part_normalized_vietnamese,
         list(NEW_WARDS_NORMALIZED),
-        scorer=fuzz.token_set_ratio,
+        scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:

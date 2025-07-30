@@ -20,8 +20,14 @@ for province, wards in NEW_ADDRESS.items():
     for ward in wards:
         NEW_WARDS.add(normalize_string(ward))
 
-# Alternative: Create normalized versions for better matching
 NEW_WARDS_NORMALIZED = {normalize_vietnamese(ward) for ward in NEW_WARDS}
+
+NEW_DISTRICTS = set()
+for province, districts in OLD_ADDRESS.items():
+    for district in districts:
+        NEW_DISTRICTS.add(normalize_string(district))
+
+NEW_DISTRICTS_NORMALIZED = {normalize_vietnamese(district) for district in NEW_DISTRICTS}
 
 DISTRICT_PREFIX_REGEX = re.compile(
     r"^(?:q\.?\s?\d*|quan|quận|h\.?\s?|huyen|huyện|tp\.?|t\.p\.?|thanh pho|thành phố|thi xa|thị xã|tx\.?\s?)\b\.?,?\s*",
@@ -189,6 +195,34 @@ def fuzzy_search_ward(part, fuzzy_threshold=80):
     
     return None
 
+def fuzzy_search_district(part, fuzzy_threshold=80):
+    part_normalized_string = normalize_string(part)
+    part_normalized_vietnamese = normalize_vietnamese(part)
+    
+    result = process.extractOne(
+        part_normalized_string,
+        list(NEW_DISTRICTS),
+        scorer=fuzz.partial_ratio,
+        score_cutoff=fuzzy_threshold,
+    )
+    if result:
+        matched_key, score = result
+        print("Found district with accent set:", matched_key, "Score:", score)
+        return matched_key
+    
+    result = process.extractOne(
+        part_normalized_vietnamese,
+        list(NEW_DISTRICTS_NORMALIZED),
+        scorer=fuzz.partial_ratio,
+        score_cutoff=fuzzy_threshold,
+    )
+    if result:
+        matched_key, score = result
+        print("Found district with unaccent set:", matched_key, "Score:", score)
+        return matched_key
+    
+    return None
+
 def has_district_prefix(part):
     return bool(DISTRICT_PREFIX_REGEX.search(part))
 
@@ -206,16 +240,6 @@ def find_ctryname(part):
         return part
 
     return fuzzy_search_province(part)
-
-def find_ctrysubsubdivname(part):
-    if has_ward_prefix(part):
-        return part
-
-    return fuzzy_search_ward(part)
-
-def is_ctrysubdivname(part):
-    return has_district_prefix(part)
-
 
 def _normalize_result(parsed_result: dict) -> dict:
     # Replace non-alphabetic and non-numeric characters with space, but keep spaces
@@ -257,22 +281,39 @@ def _parse_address(address: str, force=False) -> dict:
                 if found:
                     result["ctryname"] = found
                     last_parsed = "ctryname"
-        else:
-            if not result["ctrysubdivname"] and is_ctrysubdivname(lowered):
-                result["ctrysubdivname"] = lowered
-                last_parsed = "ctrysubdivname"
             
-            elif not result["ctrysubsubdivname"]:
-                if last_parsed == "ctrysubdivname":
-                    result["ctrysubsubdivname"] = [lowered]
-                
-                found = find_ctrysubsubdivname(lowered)
-                if found:
-                    result["ctrysubsubdivname"] = [lowered]
-                    last_parsed = "ctrysubsubdivname"
-            
-            else:
+            continue
+        
+        if has_ward_prefix(lowered):
+            if not result["ctrysubsubdivname"]:
+                result["ctrysubsubdivname"] = [lowered]
+                last_parsed = "ctrysubsubdivname"
                 continue
+        
+        if has_district_prefix(lowered):
+            if not result["ctrysubdivname"]:
+                result["ctrysubdivname"] = [lowered]
+                last_parsed = "ctrysubdivname"
+                continue
+        
+        if not result["ctrysubsubdivname"]:                
+            if last_parsed == "ctrysubdivname":
+                result["ctrysubsubdivname"] = [lowered]
+            
+            found = fuzzy_search_ward(lowered)
+            if found:
+                result["ctrysubsubdivname"] = [lowered]
+                last_parsed = "ctrysubsubdivname"
+        
+        if not result["ctrysubdivname"]:
+            if last_parsed == "ctrysubsubdivname":
+                # Detected as new address, pass this
+                continue
+            
+            found = fuzzy_search_district(lowered)
+            if found:
+                result["ctrysubdivname"] = [found]
+                last_parsed = "ctrysubdivname"
 
     return _normalize_result(result)
 

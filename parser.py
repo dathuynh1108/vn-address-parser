@@ -38,20 +38,20 @@ VN_PROVINCES_NORMALIZED_SET = {
 PROVINCE_LOOKUP = VN_PROVINCES_SET
 PROVINCE_LOOKUP.update(VN_PROVINCES_NORMALIZED_SET)
 
-# Also create a set of all wards for faster searching
-ALL_WARDS_SET = set()
-for province, wards in NEW_ADDRESS.items():
-    for ward in wards:
-        ALL_WARDS_SET.add(normalize_string(ward))
+# # Also create a set of all wards for faster searching
+# ALL_WARDS_SET = set()
+# for province, wards in NEW_ADDRESS.items():
+#     for ward in wards:
+#         ALL_WARDS_SET.add(normalize_string(ward))
 
-ALL_WARDS_SET_NORMALIZED = {normalize_vietnamese(ward) for ward in ALL_WARDS_SET}
+# ALL_WARDS_SET_NORMALIZED = {normalize_vietnamese(ward) for ward in ALL_WARDS_SET}
 
-DISTRICTS_SET = set()
-for province, districts in OLD_ADDRESS.items():
-    for district in districts:
-        DISTRICTS_SET.add(normalize_string(district))
+# DISTRICTS_SET = set()
+# for province, districts in OLD_ADDRESS.items():
+#     for district in districts:
+#         DISTRICTS_SET.add(normalize_string(district))
 
-DISTRICTS_SET_NORMALIZED = {normalize_vietnamese(district) for district in DISTRICTS_SET}
+# DISTRICTS_SET_NORMALIZED = {normalize_vietnamese(district) for district in DISTRICTS_SET}
 
 DISTRICT_PREFIX_REGEX = re.compile(
     r"^(?:q\.?\s?\d*|quan|quận|h\.?\s?|huyen|huyện|tp\.?|t\.p\.?|thanh pho|thành phố|thi xa|thị xã|tx\.?\s?)\b\.?,?\s*",
@@ -191,11 +191,9 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
 
     return None
 
-def fuzzy_search_ward(part, ward_set = None, fuzzy_threshold=80):    
+def fuzzy_search_ward(part, ward_set = None, fuzzy_threshold=90):    
     if ward_set is None:
-        print("No ward set provided. Using all wards.")
-        ward_set = ALL_WARDS_SET.copy()
-        ward_set.update(ALL_WARDS_SET_NORMALIZED)
+        return None
     
     part_normalized_string = normalize_string(part)
     part_normalized_vietnamese = normalize_vietnamese(part)
@@ -224,11 +222,9 @@ def fuzzy_search_ward(part, ward_set = None, fuzzy_threshold=80):
     
     return None
 
-def fuzzy_search_district(part, district_set = None, fuzzy_threshold=80):
+def fuzzy_search_district(part, district_set = None, fuzzy_threshold=90):
     if district_set is None:
-        print("No district set provided, use all districts.")
-        district_set = DISTRICTS_SET.copy()
-        district_set.update(DISTRICTS_SET_NORMALIZED)
+        return
     
     part_normalized_string = normalize_string(part)
     part_normalized_vietnamese = normalize_vietnamese(part)
@@ -287,6 +283,19 @@ def _normalize_result(parsed_result: dict) -> dict:
     return normalized_result
 
 
+def _find_province(parts: list[str], force=False):
+    for i, part in enumerate(parts):
+        lowered = part.lower()
+        
+        if force:
+            return i, lowered
+        else:
+            found = find_ctryname(lowered)
+            if found:
+                return i, found
+    
+    return None, None
+            
 def _parse_address(address: str, force=False) -> dict:
     result = {
         "ctryname": "",
@@ -303,81 +312,104 @@ def _parse_address(address: str, force=False) -> dict:
     
     ward_set = None
     district_set = None
-    
-    for part in parts:
-        if not part:
+
+    visited_indices = set()
+    province_index, result["ctryname"] = _find_province(parts, force=force)
+    if province_index is not None:
+        print("Found province:", result["ctryname"], "Index:", province_index)
+        last_parsed = "ctryname"
+        visited_indices.add(province_index)
+
+    for i, part in enumerate(parts):
+        if not part or i in visited_indices:
             continue
 
         lowered = part.lower()
 
-        if not result["ctryname"]:
-            if force:
-                result["ctryname"] = lowered
-                last_parsed = "ctryname"
-            else:
-                found = find_ctryname(lowered)
-                if found:
-                    result["ctryname"] = found
-                    last_parsed = "ctryname"
+        if has_ward_prefix(lowered):
+            if not result["ctrysubsubdivname"]:
+                result["ctrysubsubdivname"] = [lowered]
+                last_parsed = "ctrysubsubdivname"
+                
+                visited_indices.add(i)
+                
+                if i > 0 and i - 1 != province_index and not result["ctrysubdivname"]:
+                    result["ctrysubdivname"] = parts[i - 1]
+                
+                continue
+        
+        if has_district_prefix(lowered):
+            if not result["ctrysubdivname"]:
+                result["ctrysubdivname"] = lowered
+                last_parsed = "ctrysubdivname"
+
+                visited_indices.add(i)
+                
+                if i > 0 and province_index is None and not result["ctryname"]:
+                    result["ctryname"] = parts[i - 1]
+                
+                if i < len(parts) - 1 and i + 1 != province_index and not result["ctrysubsubdivname"]:
+                    result["ctrysubsubdivname"] = [parts[i + 1]]
+                
+                continue
+        
+    for i, part in enumerate(parts):
+        if not part or i in visited_indices:
+            continue
+
+        lowered = part.lower()
+
+        if not result["ctrysubsubdivname"]:             
+            if last_parsed == "ctrysubdivname":
+                result["ctrysubsubdivname"] = [lowered]
+
+            if result["ctryname"] and ward_set is None:                
+                new_province_matched = process.extractBests(
+                    result["ctryname"],
+                    VN_PROVINCE_WARD_DICT.keys(),
+                    scorer=fuzz.partial_ratio,
+                    score_cutoff=80,
+                    limit=5,
+                )
+                
+                if new_province_matched:
+                    ward_set = set()
+                    for province in new_province_matched:
+                        ward_set.update(VN_PROVINCE_WARD_DICT[province[0]])
+            found = fuzzy_search_ward(lowered, ward_set)
+            if found:
+                result["ctrysubsubdivname"] = [lowered]
+                last_parsed = "ctrysubsubdivname"
+
+        if not result["ctrysubdivname"]:
+            if last_parsed == "ctrysubsubdivname":
+                # Detected as new address, pass this
+                continue
             
-            if result["ctryname"]:
+            if result["ctryname"] and district_set is None:
                 old_province_matched = process.extractBests(
                     result["ctryname"],
                     VN_PROVINCE_DISTRICT_DICT.keys(),
                     scorer=fuzz.partial_ratio,
-                    score_cutoff=50,
+                    score_cutoff=80,
                     limit=5,
                 )
                 if old_province_matched:
                     district_set = set()
                     for province in old_province_matched:
                         district_set.update(VN_PROVINCE_DISTRICT_DICT[province[0]])
-                
-                new_province_matched = process.extractBests(
-                    result["ctryname"],
-                    VN_PROVINCE_WARD_DICT.keys(),
-                    scorer=fuzz.partial_ratio,
-                    score_cutoff=50,
-                    limit=5,
-                )
-                if new_province_matched:
-                    ward_set = set()
-                    for province in new_province_matched:
-                        ward_set.update(VN_PROVINCE_WARD_DICT[province[0]])
-            
-            continue
-        
-        if has_ward_prefix(lowered):
-            if not result["ctrysubsubdivname"]:
-                result["ctrysubsubdivname"] = [lowered]
-                last_parsed = "ctrysubsubdivname"
-                continue
-        
-        if has_district_prefix(lowered):
-            if not result["ctrysubdivname"]:
-                result["ctrysubdivname"] = [lowered]
-                last_parsed = "ctrysubdivname"
-                continue
-        
-        if not result["ctrysubsubdivname"]:                
-            if last_parsed == "ctrysubdivname":
-                result["ctrysubsubdivname"] = [lowered]
-
-            found = fuzzy_search_ward(lowered, ward_set)
-            if found:
-                result["ctrysubsubdivname"] = [lowered]
-                last_parsed = "ctrysubsubdivname"
-        
-        if not result["ctrysubdivname"]:
-            if last_parsed == "ctrysubsubdivname":
-                # Detected as new address, pass this
-                continue
-            
+                    
             found = fuzzy_search_district(lowered, district_set)
             if found:
                 result["ctrysubdivname"] = [found]
                 last_parsed = "ctrysubdivname"
-
+                
+                if i < len(parts) - 1 and i + 1 != province_index:
+                    result["ctrysubsubdivname"] = [parts[i + 1]]
+                    visited_indices.add(i + 1)
+                
+                continue
+                    
     return _normalize_result(result)
 
 

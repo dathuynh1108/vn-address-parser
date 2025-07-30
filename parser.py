@@ -1,11 +1,35 @@
 import re
 from fuzzywuzzy import fuzz, process
 from utils import normalize_vietnamese, normalize_string, has_number
-from data import NEW_ADDRESS, OLD_ADDRESS, SPECIAL_PROVINCE_MAP, DASH_CASES
+from data import NEW_ADDRESS, OLD_ADDRESS, SPECIAL_PROVINCE_MAP_FULL, DASH_CASES, VN_PROVINCES_SET
+from copy import copy
 
-VN_PROVINCES_SET = set()
-for province in OLD_ADDRESS.keys():
-    VN_PROVINCES_SET.add(normalize_string(province))
+VN_PROVINCE_DISTRICT_DICT = dict()
+VN_PROVINCE_WARD_DICT = dict()
+
+for province, districts in OLD_ADDRESS.items():
+    province_normalized = normalize_vietnamese(province)
+    
+    clone = copy(districts)
+    
+    VN_PROVINCE_DISTRICT_DICT[province] = clone
+    VN_PROVINCE_DISTRICT_DICT[province_normalized] = VN_PROVINCE_DISTRICT_DICT[province]
+    
+    for district in districts:
+        district_normalied = normalize_vietnamese(district)
+        VN_PROVINCE_DISTRICT_DICT[province].append(district_normalied)
+
+for province, wards in NEW_ADDRESS.items():
+    province_normalized = normalize_vietnamese(province)
+    clone = copy(wards)
+    
+    VN_PROVINCE_WARD_DICT[province] = clone
+    VN_PROVINCE_WARD_DICT[province_normalized] = VN_PROVINCE_WARD_DICT[province]
+    
+    for ward in wards:
+        ward_normalized = normalize_vietnamese(ward)
+        VN_PROVINCE_WARD_DICT[province].append(ward_normalized)
+
 
 VN_PROVINCES_NORMALIZED_SET = {
     normalize_vietnamese(province) for province in VN_PROVINCES_SET
@@ -15,19 +39,19 @@ PROVINCE_LOOKUP = VN_PROVINCES_SET
 PROVINCE_LOOKUP.update(VN_PROVINCES_NORMALIZED_SET)
 
 # Also create a set of all wards for faster searching
-NEW_WARDS = set()
+ALL_WARDS_SET = set()
 for province, wards in NEW_ADDRESS.items():
     for ward in wards:
-        NEW_WARDS.add(normalize_string(ward))
+        ALL_WARDS_SET.add(normalize_string(ward))
 
-NEW_WARDS_NORMALIZED = {normalize_vietnamese(ward) for ward in NEW_WARDS}
+ALL_WARDS_SET_NORMALIZED = {normalize_vietnamese(ward) for ward in ALL_WARDS_SET}
 
-NEW_DISTRICTS = set()
+DISTRICTS_SET = set()
 for province, districts in OLD_ADDRESS.items():
     for district in districts:
-        NEW_DISTRICTS.add(normalize_string(district))
+        DISTRICTS_SET.add(normalize_string(district))
 
-NEW_DISTRICTS_NORMALIZED = {normalize_vietnamese(district) for district in NEW_DISTRICTS}
+DISTRICTS_SET_NORMALIZED = {normalize_vietnamese(district) for district in DISTRICTS_SET}
 
 DISTRICT_PREFIX_REGEX = re.compile(
     r"^(?:q\.?\s?\d*|quan|quận|h\.?\s?|huyen|huyện|tp\.?|t\.p\.?|thanh pho|thành phố|thi xa|thị xã|tx\.?\s?)\b\.?,?\s*",
@@ -127,19 +151,19 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
 
     result = process.extractOne(
         part_normalized_vietnamese,
-        list(SPECIAL_PROVINCE_MAP.keys()),
+        list(SPECIAL_PROVINCE_MAP_FULL.keys()),
         scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
         matched_key, score = result
         print(
-            "Found province with special case:",
-            SPECIAL_PROVINCE_MAP[matched_key],
+            "Found province with special case:", matched_key,
+            SPECIAL_PROVINCE_MAP_FULL[matched_key],
             "Score:",
             score,
         )
-        return SPECIAL_PROVINCE_MAP[matched_key]
+        return SPECIAL_PROVINCE_MAP_FULL[matched_key]
 
     # Find best match, with accentive fuzzy matching
     result = process.extractOne(
@@ -151,7 +175,7 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
 
     if result:
         matched_key, score = result
-        print("Found province with accent set:", matched_key, "Score:", score)
+        print("Found province with accent:", matched_key, "Score:", score)
         return matched_key
 
     result = process.extractOne(
@@ -162,63 +186,73 @@ def fuzzy_search_province(part, fuzzy_threshold=80):
     )
     if result:
         matched_key, score = result
-        print("Found province with unaccent set:", matched_key, "Score:", score)
+        print("Found province with unaccent:", matched_key, "Score:", score)
         return matched_key
 
     return None
 
-def fuzzy_search_ward(part, fuzzy_threshold=80):
+def fuzzy_search_ward(part, ward_set = None, fuzzy_threshold=80):    
+    if ward_set is None:
+        print("No ward set provided. Using all wards.")
+        ward_set = ALL_WARDS_SET.copy()
+        ward_set.update(ALL_WARDS_SET_NORMALIZED)
+    
     part_normalized_string = normalize_string(part)
     part_normalized_vietnamese = normalize_vietnamese(part)
 
     result = process.extractOne(
         part_normalized_string,
-        list(NEW_WARDS),
+        list(ward_set),
         scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
         matched_key, score = result
-        print("Found ward with accent set:", matched_key, "Score:", score)
+        print("Found ward with accent:", matched_key, "Score:", score)
         return matched_key
 
     result = process.extractOne(
         part_normalized_vietnamese,
-        list(NEW_WARDS_NORMALIZED),
+        list(ward_set),
         scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
         matched_key, score = result
-        print("Found ward with unaccent set:", matched_key, "Score:", score)
+        print("Found ward with unaccent:", matched_key, "Score:", score)
         return matched_key
     
     return None
 
-def fuzzy_search_district(part, fuzzy_threshold=80):
+def fuzzy_search_district(part, district_set = None, fuzzy_threshold=80):
+    if district_set is None:
+        print("No district set provided, use all districts.")
+        district_set = DISTRICTS_SET.copy()
+        district_set.update(DISTRICTS_SET_NORMALIZED)
+    
     part_normalized_string = normalize_string(part)
     part_normalized_vietnamese = normalize_vietnamese(part)
     
     result = process.extractOne(
         part_normalized_string,
-        list(NEW_DISTRICTS),
+        list(district_set),
         scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
         matched_key, score = result
-        print("Found district with accent set:", matched_key, "Score:", score)
+        print("Found district with accent:", matched_key, "Score:", score)
         return matched_key
     
     result = process.extractOne(
         part_normalized_vietnamese,
-        list(NEW_DISTRICTS_NORMALIZED),
+        list(district_set),
         scorer=fuzz.partial_ratio,
         score_cutoff=fuzzy_threshold,
     )
     if result:
         matched_key, score = result
-        print("Found district with unaccent set:", matched_key, "Score:", score)
+        print("Found district with unaccent:", matched_key, "Score:", score)
         return matched_key
     
     return None
@@ -265,7 +299,11 @@ def _parse_address(address: str, force=False) -> dict:
 
     parts = parts[::-1]
 
-    last_parsed = None
+    last_parsed = None    
+    
+    ward_set = None
+    district_set = None
+    
     for part in parts:
         if not part:
             continue
@@ -281,6 +319,25 @@ def _parse_address(address: str, force=False) -> dict:
                 if found:
                     result["ctryname"] = found
                     last_parsed = "ctryname"
+            
+            if result["ctryname"]:
+                old_province_matched = process.extractOne(
+                    result["ctryname"],
+                    VN_PROVINCE_DISTRICT_DICT.keys(),
+                    scorer=fuzz.partial_ratio,
+                    score_cutoff=50,
+                )
+                if old_province_matched:
+                    district_set = VN_PROVINCE_DISTRICT_DICT[old_province_matched[0]]
+                
+                new_province_matched = process.extractOne(
+                    result["ctryname"],
+                    VN_PROVINCE_WARD_DICT.keys(),
+                    scorer=fuzz.partial_ratio,
+                    score_cutoff=50,
+                )
+                if new_province_matched:
+                    ward_set = VN_PROVINCE_WARD_DICT[new_province_matched[0]]
             
             continue
         
@@ -299,8 +356,8 @@ def _parse_address(address: str, force=False) -> dict:
         if not result["ctrysubsubdivname"]:                
             if last_parsed == "ctrysubdivname":
                 result["ctrysubsubdivname"] = [lowered]
-            
-            found = fuzzy_search_ward(lowered)
+
+            found = fuzzy_search_ward(lowered, ward_set)
             if found:
                 result["ctrysubsubdivname"] = [lowered]
                 last_parsed = "ctrysubsubdivname"
@@ -310,7 +367,7 @@ def _parse_address(address: str, force=False) -> dict:
                 # Detected as new address, pass this
                 continue
             
-            found = fuzzy_search_district(lowered)
+            found = fuzzy_search_district(lowered, district_set)
             if found:
                 result["ctrysubdivname"] = [found]
                 last_parsed = "ctrysubdivname"

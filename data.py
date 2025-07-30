@@ -1,6 +1,6 @@
 import os
 import json
-
+from utils import normalize_string
 
 # Read from new_address.json
 def load_new_address():
@@ -12,8 +12,8 @@ def load_new_address():
         # Create a dictionary grouped by province for faster lookup
         address_dict = {}
         for item in address_data:
-            province = item["province"]
-            ward = item["ward"]
+            province = normalize_string(item["province"])
+            ward = normalize_string(item["ward"])
 
             if province not in address_dict:
                 address_dict[province] = []
@@ -37,8 +37,8 @@ def load_old_address():
         # Create a dictionary grouped by province for faster lookup
         address_dict = {}
         for item in address_data:
-            province = item["province"]
-            district = item["district"]
+            province = normalize_string(item["province"])
+            district = normalize_string(item["district"])
 
             if province not in address_dict:
                 address_dict[province] = []
@@ -64,10 +64,15 @@ SPECIAL_PROVINCE_MAP = {
         "daklac",
         "daclac",
     ): "ĐắkLắk",
-    ("con tum"): "Kon Tum",
-    ("za lai"): "Gia Lai",
+    ("con tum",): "Kon Tum",
+    ("za lai",): "Gia Lai",
     ("tt hue", "thua thien hue"): "Thừa Thiên - Huế",
 }
+
+SPECIAL_PROVINCE_MAP_FULL = {}
+for cases, map_province in SPECIAL_PROVINCE_MAP.items():
+    for case in cases:
+        SPECIAL_PROVINCE_MAP_FULL[case] = map_province
 
 DASH_CASES = [
     ("bà rịa", "vũng tàu"),
@@ -83,3 +88,10 @@ DASH_CASES = [
 NEW_ADDRESS = load_new_address()
 OLD_ADDRESS = load_old_address()
 
+VN_PROVINCES_SET = set()
+
+for province in OLD_ADDRESS.keys():
+    VN_PROVINCES_SET.add(province)
+ 
+for province in NEW_ADDRESS.keys():
+    VN_PROVINCES_SET.add(province)

@@ -321,7 +321,7 @@ def _parse_address(address: str, force=False) -> dict:
                     last_parsed = "ctryname"
             
             if result["ctryname"]:
-                old_province_matched, _ = process.extractBests(
+                old_province_matched = process.extractBests(
                     result["ctryname"],
                     VN_PROVINCE_DISTRICT_DICT.keys(),
                     scorer=fuzz.partial_ratio,
@@ -331,9 +331,9 @@ def _parse_address(address: str, force=False) -> dict:
                 if old_province_matched:
                     district_set = set()
                     for province in old_province_matched:
-                        district_set.update(VN_PROVINCE_DISTRICT_DICT[province])
+                        district_set.update(VN_PROVINCE_DISTRICT_DICT[province[0]])
                 
-                new_province_matched, _ = process.extractBests(
+                new_province_matched = process.extractBests(
                     result["ctryname"],
                     VN_PROVINCE_WARD_DICT.keys(),
                     scorer=fuzz.partial_ratio,
@@ -343,7 +343,7 @@ def _parse_address(address: str, force=False) -> dict:
                 if new_province_matched:
                     ward_set = set()
                     for province in new_province_matched:
-                        ward_set.update(VN_PROVINCE_WARD_DICT[province])
+                        ward_set.update(VN_PROVINCE_WARD_DICT[province[0]])
             
             continue
         

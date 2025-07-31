@@ -1,2 +1,5 @@
 fuzzywuzzy
 python-Levenshtein
+torch
+transformers
+transformers[torch]

@@ -3,6 +3,7 @@ from fuzzywuzzy import fuzz, process
 from utils import normalize_vietnamese, normalize_string, has_number
 from data import NEW_ADDRESS, OLD_ADDRESS, SPECIAL_PROVINCE_MAP_FULL, DASH_CASES, VN_PROVINCES_SET
 from copy import copy
+from ner import ner
 
 VN_PROVINCE_DISTRICT_DICT = dict()
 VN_PROVINCE_WARD_DICT = dict()
@@ -296,15 +297,12 @@ def _find_province(parts: list[str], force=False):
     
     return None, None
             
-def _parse_address(address: str, force=False) -> dict:
+def _parse_address(parts: list[str], force=False) -> dict:
     result = {
         "ctryname": "",
         "ctrysubdivname": "",
         "ctrysubsubdivname": [],
     }
-
-    parts = re.split(r"\s*[,;]\s*", address)
-    parts = [p for p in parts if p.strip()]
 
     parts = parts[::-1]
 
@@ -347,6 +345,7 @@ def _parse_address(address: str, force=False) -> dict:
                 
                 if i > 0 and province_index is None and not result["ctryname"]:
                     result["ctryname"] = parts[i - 1]
+                    province_index = i - 1
                 
                 if i < len(parts) - 1 and i + 1 != province_index and not result["ctrysubsubdivname"]:
                     result["ctrysubsubdivname"] = [parts[i + 1]]
@@ -409,7 +408,20 @@ def _parse_address(address: str, force=False) -> dict:
                     visited_indices.add(i + 1)
                 
                 continue
-                    
+    
+    if province_index is not None:
+        if len(parts) >= 4:
+            if not result["ctrysubdivname"]:
+                if province_index < len(parts) - 1: 
+                    result["ctrysubdivname"] = parts[province_index + 1]
+                
+                if province_index < len(parts) - 2: 
+                    result["ctrysubsubdivname"] = [parts[province_index + 2]]
+        else:
+            if province_index < len(parts) - 1: 
+                result["ctrysubsubdivname"] = [parts[province_index + 1]]
+        
+              
     return _normalize_result(result)
 
 
@@ -440,7 +452,15 @@ def parse_address(address: str) -> dict:
     address = remove_redunts(handle_dup_substr(address.replace(".", "")))
     address = handle_dash(address)
 
-    parsed_result = _parse_address(address)
+    entities = ner(address)
+    parts = []
+    for entity in entities:
+        if entity["entity"] == "LOCATION":
+            parts.append(entity["word"])
+    
+    print("After NER", parts)
+    
+    parsed_result = _parse_address(parts)
     if parsed_result["ctryname"]:
         return parsed_result
 

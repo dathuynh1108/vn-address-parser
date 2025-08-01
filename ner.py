@@ -18,6 +18,7 @@ def group_and_clean_entities(entities, text):
             # Start new entity
             if current_entity:
                 grouped.append(current_entity)
+            
             current_entity = {
                 'word': word,
                 'entity': entity_type[2:],  # Remove B- prefix
@@ -39,7 +40,7 @@ def group_and_clean_entities(entities, text):
     
     if current_entity:
         grouped.append(current_entity)
-    
+
     return grouped
 
 def ner(text):

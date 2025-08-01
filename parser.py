@@ -70,7 +70,7 @@ PROVINCE_PREFIX_REGEX = re.compile(
 )
 
 STREET_ADDRESS_PREFIX_REGEX = re.compile(
-    r'^\b(?:\d+|số|đường|duong|phố|pho|tổ|to|ngõ|ngo|ngách|ngach|hẻm|hem|toà nhà|toa nha\s)[\w\s,.-]+\b',
+    r'^\b(?:\d+|số|đường|duong|phố|pho|tổ|to|lô|lo|thôn|thon|ngõ|ngo|ngách|ngach|hẻm|hem|toà nhà|toa nha\s)[\w\s,.-]+\b',
     flags=re.IGNORECASE,
 )
 
@@ -465,16 +465,12 @@ def remove_redunts(str):
 
 
 def parse_address(address: str) -> dict:
-    address = normalize_string(address)
     address = re.sub(
         r"\b(việt nam|vietnam|vn)\b", "", address, flags=re.IGNORECASE
     ).strip()
 
-    address = address.replace(
-        "hcm", " Hồ Chí Minh"
-    ).replace(
-        "tphcm", "Thành phố Hồ Chí Minh"
-    )
+    address = re.sub(r"\bhcm\b", " Hồ Chí Minh", address, flags=re.IGNORECASE)
+    address = re.sub(r"\btphcm\b", "Thành phố Hồ Chí Minh", address, flags=re.IGNORECASE)
     
     address = remove_redunts(handle_dup_substr(address.replace(".", "")))
     address = handle_dash(address)
@@ -483,7 +479,7 @@ def parse_address(address: str) -> dict:
     parts = []
     for entity in entities:
         if entity["entity"] == "LOCATION":
-            parts.append(entity["word"])
+            parts.append(normalize_string(entity["word"]))
     
     print("After NER", parts)
     

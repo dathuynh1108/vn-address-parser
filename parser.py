@@ -69,6 +69,11 @@ PROVINCE_PREFIX_REGEX = re.compile(
     flags=re.IGNORECASE,
 )
 
+STREET_ADDRESS_PREFIX_REGEX = re.compile(
+    r'^\b(?:\d+|số|đường|duong|phố|pho|tổ|to|ngõ|ngo|ngách|ngach|hẻm|hem|toà nhà|toa nha\s)[\w\s,.-]+\b',
+    flags=re.IGNORECASE,
+)
+
 BUILDING_PREFIXES = {"ct", "hh", "bt", "ps", "ls", "cd"}  # , 'n'}
 
 
@@ -265,6 +270,8 @@ def has_ward_prefix(part):
 def has_province_prefix(part):
     return bool(PROVINCE_PREFIX_REGEX.search(part))
 
+def has_street_address_prefix(part):
+    return bool(STREET_ADDRESS_PREFIX_REGEX.search(part))
 
 def find_ctryname(part):
     if has_province_prefix(part):
@@ -296,7 +303,7 @@ def _find_province(parts: list[str], force=False):
                 return i, found
     
     return None, None
-            
+    
 def _parse_address(parts: list[str], force=False) -> dict:
     result = {
         "ctryname": "",
@@ -346,12 +353,19 @@ def _parse_address(parts: list[str], force=False) -> dict:
                 if i > 0 and province_index is None and not result["ctryname"]:
                     result["ctryname"] = parts[i - 1]
                     province_index = i - 1
-                
+                    visited_indices.add(province_index)
+                   
                 if i < len(parts) - 1 and i + 1 != province_index and not result["ctrysubsubdivname"]:
-                    result["ctrysubsubdivname"] = [parts[i + 1]]
+                    # This maybe a street address. Check first
+                    checking_part = parts[i + 1]
+                    if has_street_address_prefix(checking_part):
+                        continue
+
+                    result["ctrysubsubdivname"] = [checking_part]
+                    visited_indices.add(i + 1)
                 
                 continue
-        
+
     for i, part in enumerate(parts):
         if not part or i in visited_indices:
             continue
@@ -359,8 +373,11 @@ def _parse_address(parts: list[str], force=False) -> dict:
         lowered = part.lower()
 
         if not result["ctrysubsubdivname"]:             
-            if last_parsed == "ctrysubdivname":
+            if last_parsed == "ctrysubdivname" and not has_street_address_prefix(lowered):                
                 result["ctrysubsubdivname"] = [lowered]
+                last_parsed = "ctrysubsubdivname"
+                visited_indices.add(i)
+                continue
 
             if result["ctryname"] and ward_set is None:                
                 new_province_matched = process.extractBests(
@@ -375,11 +392,13 @@ def _parse_address(parts: list[str], force=False) -> dict:
                     ward_set = set()
                     for province in new_province_matched:
                         ward_set.update(VN_PROVINCE_WARD_DICT[province[0]])
+            
             found = fuzzy_search_ward(lowered, ward_set)
             if found:
                 result["ctrysubsubdivname"] = [lowered]
                 last_parsed = "ctrysubsubdivname"
-
+                visited_indices.add(i)  
+        
         if not result["ctrysubdivname"]:
             if last_parsed == "ctrysubsubdivname":
                 # Detected as new address, pass this
@@ -402,23 +421,24 @@ def _parse_address(parts: list[str], force=False) -> dict:
             if found:
                 result["ctrysubdivname"] = [found]
                 last_parsed = "ctrysubdivname"
+                visited_indices.add(i)
                 
                 if i < len(parts) - 1 and i + 1 != province_index:
                     result["ctrysubsubdivname"] = [parts[i + 1]]
                     visited_indices.add(i + 1)
                 
                 continue
-    
+
     if province_index is not None:
         if len(parts) >= 4:
             if not result["ctrysubdivname"]:
-                if province_index < len(parts) - 1: 
+                if province_index < len(parts) - 1 and province_index + 1 not in visited_indices: 
                     result["ctrysubdivname"] = parts[province_index + 1]
                 
-                if province_index < len(parts) - 2: 
+                if province_index < len(parts) - 2 and province_index + 2 not in visited_indices: 
                     result["ctrysubsubdivname"] = [parts[province_index + 2]]
         else:
-            if province_index < len(parts) - 1: 
+            if province_index < len(parts) - 1 and province_index + 1 not in visited_indices: 
                 result["ctrysubsubdivname"] = [parts[province_index + 1]]
         
               
@@ -449,6 +469,13 @@ def parse_address(address: str) -> dict:
     address = re.sub(
         r"\b(việt nam|vietnam|vn)\b", "", address, flags=re.IGNORECASE
     ).strip()
+
+    address = address.replace(
+        "hcm", " Hồ Chí Minh"
+    ).replace(
+        "tphcm", "Thành phố Hồ Chí Minh"
+    )
+    
     address = remove_redunts(handle_dup_substr(address.replace(".", "")))
     address = handle_dash(address)
 
